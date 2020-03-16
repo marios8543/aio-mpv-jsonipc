@@ -13,7 +13,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/marios8543/aio-mpv-jsonipc",
     packages=setuptools.find_packages(),
-    py_modules=['aio_mpv_jsonipc'],
+    py_modules=['aio_mpv_jsonipc.MPV'],
     classifiers=[
         "Programming Language :: Python :: 3",
          "License :: OSI Approved :: MIT License",
