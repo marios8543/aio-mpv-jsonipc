@@ -19,7 +19,7 @@ class ResponseEvent:
         return self.response
 
 class MPV:
-    def __init__(self, media="", socket=None, mpv_path="/usr/bin/mpv"):
+    def __init__(self, media="", socket=None, mpv_path="/usr/bin/mpv", mpv_args=["--no-audio-display"]):
         """
         Create an MPV instance. if you specify a socket, this will not create a new instance and will instead connect to that one.
         If not it will start a new MPV instance according to the mpv_path argument and connect to it. Optionally you can specify a path or URL
@@ -27,6 +27,7 @@ class MPV:
         """
         self.loop = get_event_loop()
         self.media = media
+        self.mpv_args = mpv_args
         self.socket = socket
         self.mpv_path = mpv_path
         self.reader, self.writer = None, None
@@ -51,6 +52,7 @@ class MPV:
             self.mpv_path,
             "--input-ipc-server=/tmp/mpv-socket.sock",
             self.media,
+            *self.mpv_args,
             stdout=DEVNULL,
             stderr=DEVNULL
         )
@@ -116,7 +118,7 @@ class MPV:
             yield data
         self.wait_queue = None
 
-    async def start(self, wait=False):
+    async def start(self):
         """
         Coroutine. Start this MPV instance.
         """
@@ -132,8 +134,9 @@ class MPV:
                 break
             except FileNotFoundError:
                 await sleep(0.1)
-        if wait:
-            await self.process.wait()
+
+    async def wait_complete(self):
+        await self.process.wait()
 
     async def stop(self):
         """
