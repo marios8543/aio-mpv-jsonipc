@@ -38,7 +38,7 @@ class MPV:
         self.callbacks = {}
         self.tasks = []
         self.rid = 0
-        self.socket_lock = Lock()
+        self.command_lock = Lock()
 
     def _cleanup(self):
         try:
@@ -60,19 +60,25 @@ class MPV:
 
     async def _process_events(self):
         while True:
-            try:
-                data = await self.reader.readline()
-                data = loads(data.decode("utf-8"))
-                if "request_id" in data and data["request_id"] in self.command_responses:
-                    self.command_responses[data["request_id"]].set_response(data)
-                else:
-                    await self.callback_queue.put(data)
-                    if self.wait_queue:
-                        await self.wait_queue.put(data)
-            except Exception:
-                print_exc()
-            finally:
-                await sleep(0.1)
+            counter = 0
+            while True:
+                try:
+                    data = await self.reader.readline()
+                    data = loads(data.decode("utf-8"))
+                    break
+                except ValueError:
+                    counter += 1
+                    continue
+                finally:
+                    if counter >= 10:
+                        await self.stop()
+            if "request_id" in data and data["request_id"] in self.command_responses:
+                self.command_responses[data["request_id"]].set_response(data)
+            else:
+                await self.callback_queue.put(data)
+                if self.wait_queue:
+                    await self.wait_queue.put(data)
+            await sleep(0.1)
 
     async def _callback_dispatcher(self):
         while True:
@@ -85,19 +91,19 @@ class MPV:
         """
         Coroutine. Sends a command, waits and returns the response.
         """
-        self.rid += 1
-        self.command_responses[self.rid] = ResponseEvent()
-        data = dumps({
-            "command": arguments,
-            "request_id": self.rid
-        })+"\n"
-        data = data.encode("utf-8")
-        async with self.socket_lock:
+        async with self.command_lock:
+            self.rid += 1
+            self.command_responses[self.rid] = ResponseEvent()
+            data = dumps({
+                "command": arguments,
+                "request_id": self.rid
+            })+"\n"
+            data = data.encode("utf-8")
             self.writer.write(data)
             await self.writer.drain()
-        response = await self.command_responses[self.rid].wait()
-        del self.command_responses[self.rid]
-        return response
+            response = await self.command_responses[self.rid].wait()
+            del self.command_responses[self.rid]
+            return response
 
     def listen_for(self, event, func):
         """
@@ -142,11 +148,15 @@ class MPV:
         """
         Coroutine. Stop this MPV instance.
         """
-        self.process.terminate()
-        self.writer.close()
-        await self.writer.wait_closed()
+        try:
+            self.process.terminate()
+            await self.process.wait()
+        except:
+            pass
         for task in self.tasks:
             task.cancel()
+        self.writer.close()
+        await self.writer.wait_closed()
 
     def __del__(self):
         self.loop.create_task(self.stop())
