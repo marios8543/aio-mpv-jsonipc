@@ -142,6 +142,10 @@ class MPV:
                 await sleep(0.1)
 
     async def wait_complete(self):
+        """
+        Coroutine. Wait for the player to exit. Works when the MPV
+        instance is managed by the library. 
+        """
         await self.process.wait()
 
     async def stop(self):
