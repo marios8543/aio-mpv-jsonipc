@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name='aio-mpv-jsonipc',
-    version='0.3',
+    version='1.0',
     author="marios8543",
     author_email="marios8543@gmail.com",
     description="Asyncio-compatible MPV JSON IPC client",

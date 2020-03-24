@@ -87,6 +87,17 @@ class MPV:
                 for coro in self.callbacks[data["event"]]:
                     self.loop.create_task(coro(data["data"]))
 
+    async def _stop(self):
+        for task in self.tasks:
+            task.cancel()
+        self.writer.close()
+        await self.writer.wait_closed()
+        self._cleanup()
+
+    async def _wait_destroy(self):
+        await self.wait_complete()
+        await self._stop()
+
     async def send(self, arguments):
         """
         Coroutine. Sends a command, waits and returns the response.
@@ -121,7 +132,8 @@ class MPV:
         self.wait_queue = Queue()
         while True:
             data = await self.wait_queue.get()
-            yield data
+            if not event or data["event"] == event:
+                yield data
         self.wait_queue = None
 
     async def start(self):
@@ -140,6 +152,8 @@ class MPV:
                 break
             except FileNotFoundError:
                 await sleep(0.1)
+        self.loop.create_task(self._wait_destroy())
+        
 
     async def wait_complete(self):
         """
@@ -153,14 +167,10 @@ class MPV:
         Coroutine. Stop this MPV instance.
         """
         try:
-            self.process.terminate()
+            await self.send(["quit"])
             await self.process.wait()
         except:
             pass
-        for task in self.tasks:
-            task.cancel()
-        self.writer.close()
-        await self.writer.wait_closed()
 
     def __del__(self):
         self.loop.create_task(self.stop())
