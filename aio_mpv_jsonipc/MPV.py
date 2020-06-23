@@ -118,6 +118,12 @@ class MPV:
             del self.command_responses[self.rid]
             return response
 
+    async def command(self, *args):
+        result = await self.send(args)
+        if result.get("error") != "success":
+            logger.warn("mpv command returned error: %s" %(result.get("error")))
+        return result.get("data")
+
     def listen_for(self, event, func):
         """
         Decorator. This will add a coroutine to be used as a callback for the event specified in the event argument
