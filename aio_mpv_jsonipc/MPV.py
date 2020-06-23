@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 from asyncio import get_event_loop, open_unix_connection, create_subprocess_exec, Queue, Event, sleep, Lock
 from asyncio.subprocess import DEVNULL
 from inspect import iscoroutine
