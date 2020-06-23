@@ -152,7 +152,8 @@ class MPV:
                 break
             except FileNotFoundError:
                 await sleep(0.1)
-        self.loop.create_task(self._wait_destroy())
+        if self.process:
+            self.loop.create_task(self._wait_destroy())
         
 
     async def wait_complete(self):
