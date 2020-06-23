@@ -172,7 +172,9 @@ class MPV:
 
         self.listen_for("property-change", self.on_property_change)
 
-        self.loop.create_task(self._wait_destroy())
+        if self.process:
+            self.loop.create_task(self._wait_destroy())
+
 
     async def on_property_change(self, id, name, data):
         if id in self.property_bindings:
