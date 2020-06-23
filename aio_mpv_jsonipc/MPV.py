@@ -28,6 +28,8 @@ class MPV:
         of a media file to play.
         """
         self.properties = set()
+        self.property_bindings = {}
+        self.observer_id = 1
         self.loop = get_event_loop()
         self.media = media
         self.mpv_args = mpv_args
@@ -87,8 +89,9 @@ class MPV:
         while True:
             data = await self.callback_queue.get()
             if data["event"] in self.callbacks:
+                params = { k: v for k, v in data.items() if k != "event"}
                 for coro in self.callbacks[data["event"]]:
-                    self.loop.create_task(coro(data["data"]))
+                    self.loop.create_task(coro(**params))
 
     async def _stop(self):
         for task in self.tasks:
@@ -167,9 +170,28 @@ class MPV:
             for p in await self.command("get_property", "property-list")
         )
 
-        self.loop.create_task(self._wait_destroy())
-        
+        self.listen_for("property-change", self.on_property_change)
 
+        self.loop.create_task(self._wait_destroy())
+
+    async def on_property_change(self, id, name, data):
+        if id in self.property_bindings:
+            self.loop.create_task(self.property_bindings[id](name, data))
+
+    def bind_property_observer(self, name, callback):
+        """
+        Bind a callback to an MPV property change.
+
+        *name* is the property name.
+        *callback(name, data)* is the function to call.
+
+        Returns a unique observer ID needed to destroy the observer.
+        """
+        observer_id = self.observer_id
+        self.observer_id += 1
+        self.property_bindings[observer_id] = callback
+        self.loop.create_task(self.command("observe_property", observer_id, name))
+        return observer_id
     async def wait_complete(self):
         """
         Coroutine. Wait for the player to exit. Works when the MPV
