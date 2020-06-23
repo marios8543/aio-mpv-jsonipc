@@ -27,6 +27,7 @@ class MPV:
         If not it will start a new MPV instance according to the mpv_path argument and connect to it. Optionally you can specify a path or URL
         of a media file to play.
         """
+        self.properties = set()
         self.loop = get_event_loop()
         self.media = media
         self.mpv_args = mpv_args
@@ -160,6 +161,12 @@ class MPV:
                 break
             except FileNotFoundError:
                 await sleep(0.1)
+
+        self.properties = set(
+            p.replace("-", "_")
+            for p in await self.command("get_property", "property-list")
+        )
+
         self.loop.create_task(self._wait_destroy())
         
 
