@@ -20,6 +20,11 @@ class ResponseEvent:
         await self.event.wait()
         return self.response
 
+class MPVError(Exception):
+    """An error originating from MPV or due to a problem with MPV."""
+    def __init__(self, *args, **kwargs):
+        super(MPVError, self).__init__(*args, **kwargs)
+
 class MPV:
     def __init__(self, media="", socket=None, mpv_path="/usr/bin/mpv", mpv_args=["--no-audio-display"]):
         """
@@ -123,9 +128,11 @@ class MPV:
             return response
 
     async def command(self, *args):
+        logger.debug(f"command: {args}")
         result = await self.send(args)
         if result.get("error") != "success":
-            logger.warn("mpv command returned error: %s" %(result.get("error")))
+            raise MPVError("mpv command returned error: %s" %(result.get("error")))
+
         return result.get("data")
 
     def listen_for(self, event, func):
