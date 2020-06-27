@@ -33,6 +33,7 @@ class MPV:
         of a media file to play.
         """
         self.properties = set()
+        self.event_bindings = {}
         self.property_bindings = {}
         self.observer_id = 1
         self.loop = get_event_loop()
@@ -42,10 +43,9 @@ class MPV:
         self.mpv_path = mpv_path
         self.reader, self.writer = None, None
         self.process = None
-        self.callback_queue = Queue()
+        self.event_queue = Queue()
         self.wait_queue = None
         self.command_responses = {}
-        self.callbacks = {}
         self.tasks = []
         self.rid = 0
         self.command_lock = Lock()
@@ -77,16 +77,17 @@ class MPV:
             if "request_id" in json_data and json_data["request_id"] in self.command_responses:
                 self.command_responses[json_data["request_id"]].set_response(json_data)
             else:
-                await self.callback_queue.put(data)
+                await self.event_queue.put(json_data)
                 if self.wait_queue:
-                    await self.wait_queue.put(data)
+                    await self.wait_queue.put(json_data)
 
-    async def _callback_dispatcher(self):
+
+    async def _event_dispatcher(self):
         while True:
-            data = await self.callback_queue.get()
-            if data["event"] in self.callbacks:
+            data = await self.event_queue.get()
+            if data["event"] in self.event_bindings:
                 params = { k: v for k, v in data.items() if k != "event"}
-                for coro in self.callbacks[data["event"]]:
+                for coro in self.event_bindings[data["event"]]:
                     self.loop.create_task(coro(**params))
 
     async def _stop(self):
@@ -130,10 +131,10 @@ class MPV:
         """
         Decorator. This will add a coroutine to be used as a callback for the event specified in the event argument
         """
-        if event in self.callbacks:
-            self.callbacks[event].append(func)
+        if event in self.event_bindings:
+            self.event_bindings[event].append(func)
         else:
-            self.callbacks[event] = [func]
+            self.event_bindings[event] = [func]
 
     async def get_events(self, event=None):
         """
@@ -157,7 +158,7 @@ class MPV:
                 self.reader, self.writer = await open_unix_connection(self.socket)
                 self.tasks = [
                     self.loop.create_task(self._process_events()),
-                    self.loop.create_task(self._callback_dispatcher())
+                    self.loop.create_task(self._event_dispatcher())
                 ]
                 break
             except FileNotFoundError:
@@ -192,6 +193,19 @@ class MPV:
         self.property_bindings[observer_id] = callback
         self.loop.create_task(self.command("observe_property", observer_id, name))
         return observer_id
+    def on_event(self, name):
+        """
+        Decorator to bind a callback to an MPV event.
+
+        @on_event(name)
+        def my_callback(event_data):
+            pass
+        """
+        def wrapper(func):
+            self.listen_for(name, func)
+            return func
+        return wrapper
+
     async def wait_complete(self):
         """
         Coroutine. Wait for the player to exit. Works when the MPV
