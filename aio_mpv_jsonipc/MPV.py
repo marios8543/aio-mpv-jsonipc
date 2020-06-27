@@ -35,7 +35,10 @@ class MPV:
         self.properties = set()
         self.event_bindings = {}
         self.property_bindings = {}
+        self.key_bindings = {}
+
         self.observer_id = 1
+        self.keybind_id = 1
         self.loop = get_event_loop()
         self.media = media
         self.mpv_args = mpv_args
@@ -170,14 +173,19 @@ class MPV:
         )
 
         self.listen_for("property-change", self.on_property_change)
+        self.listen_for("client-message", self.on_client_message)
 
         if self.process:
             self.loop.create_task(self._wait_destroy())
 
+    async def on_client_message(self, args):
+        if len(args) == 2 and args[0] == "custom-bind":
+            self.loop.create_task(self.key_bindings[args[1]]())
 
     async def on_property_change(self, id, name, data):
         if id in self.property_bindings:
             self.loop.create_task(self.property_bindings[id](name, data))
+
 
     def bind_property_observer(self, name, callback):
         """
@@ -193,6 +201,41 @@ class MPV:
         self.property_bindings[observer_id] = callback
         self.loop.create_task(self.command("observe_property", observer_id, name))
         return observer_id
+
+    async def bind_key_press(self, name, callback):
+        """
+        Bind a callback to an MPV keypress event.
+
+        *name* is the key symbol.
+        *callback()* is the function to call.
+        """
+        keybind_id = self.keybind_id
+        self.keybind_id += 1
+
+        bind_name = "bind{0}".format(keybind_id)
+        self.key_bindings["bind{0}".format(keybind_id)] = callback
+        try:
+            await self.command("keybind", name, "script-message custom-bind {0}".format(bind_name))
+        except MPVError:
+            await self.command(
+                "define_section", bind_name,
+                "{0} script-message custom-bind {1}".format(name, bind_name)
+            )
+            await self.command("enable_section", bind_name)
+
+    def on_key_press(self, name):
+        """
+        Decorator to bind a callback to an MPV keypress event.
+
+        @on_key_press(key_name)
+        def my_callback():
+            pass
+        """
+        def wrapper(func):
+            self.bind_key_press(name, func)
+            return func
+        return wrapper
+
     def on_event(self, name):
         """
         Decorator to bind a callback to an MPV event.
