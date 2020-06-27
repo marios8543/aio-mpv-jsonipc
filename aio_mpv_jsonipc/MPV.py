@@ -69,26 +69,17 @@ class MPV:
         self.socket = "/tmp/mpv-socket.sock"
 
     async def _process_events(self):
+
         while True:
-            counter = 0
-            while True:
-                try:
-                    data = await self.reader.readline()
-                    data = loads(data.decode("utf-8"))
-                    break
-                except ValueError:
-                    counter += 1
-                    continue
-                finally:
-                    if counter >= 10:
-                        await self.stop()
-            if "request_id" in data and data["request_id"] in self.command_responses:
-                self.command_responses[data["request_id"]].set_response(data)
+            data = await self.reader.readline()
+            json_data = loads(data)
+            logger.debug(json_data)
+            if "request_id" in json_data and json_data["request_id"] in self.command_responses:
+                self.command_responses[json_data["request_id"]].set_response(json_data)
             else:
                 await self.callback_queue.put(data)
                 if self.wait_queue:
                     await self.wait_queue.put(data)
-            await sleep(0.1)
 
     async def _callback_dispatcher(self):
         while True:
