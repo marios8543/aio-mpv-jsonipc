@@ -184,7 +184,8 @@ class MPV:
 
     async def on_property_change(self, id, name, data):
         if id in self.property_bindings:
-            self.loop.create_task(self.property_bindings[id](name, data))
+            propname, callback = self.property_bindings[id]
+            self.loop.create_task(callback(name, data))
 
 
     def bind_property_observer(self, name, callback):
@@ -198,9 +199,20 @@ class MPV:
         """
         observer_id = self.observer_id
         self.observer_id += 1
-        self.property_bindings[observer_id] = callback
+        self.property_bindings[observer_id] = name, callback
         self.loop.create_task(self.command("observe_property", observer_id, name))
         return observer_id
+
+    def unbind_property_observer(self, name_or_id):
+        if isinstance(name_or_id, int) and name_or_id in self.property_bindings:
+            del self.property_bindings[name_or_id]
+        elif isinstance(name_or_id, str):
+            self.property_bindings = {
+                id: (propname, callback)
+                for id, (propname, callback) in self.property_bindings.items()
+                if propname != name_or_id
+            }
+
 
     async def bind_key_press(self, name, callback):
         """
