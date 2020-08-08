@@ -36,6 +36,7 @@ class MPV:
         self.event_bindings = {}
         self.property_bindings = {}
         self.key_bindings = {}
+        self.unbound_key_callback = None
 
         self.observer_id = 1
         self.keybind_id = 1
@@ -181,6 +182,14 @@ class MPV:
     async def on_client_message(self, args):
         if len(args) == 2 and args[0] == "custom-bind":
             self.loop.create_task(self.key_bindings[args[1]]())
+        elif (
+                self.unbound_key_callback
+                and len(args) == 5
+                and args[0] == "key-binding"
+                and args[1] == "unmapped-keypress"
+                and args[2][0] == "d"
+        ):
+            self.loop.create_task(self.unbound_key_callback(*args[2:]))
 
     async def on_property_change(self, id, name, data):
         if id in self.property_bindings:
@@ -234,6 +243,11 @@ class MPV:
                 "{0} script-message custom-bind {1}".format(name, bind_name)
             )
             await self.command("enable_section", bind_name)
+
+    async def register_unbound_key_callback(self, callback):
+        self.unbound_key_callback = callback
+        await self.command("keybind", "UNMAPPED", "script-binding unmapped-keypress")
+
 
     def on_key_press(self, name):
         """
