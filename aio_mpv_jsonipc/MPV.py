@@ -1,5 +1,6 @@
 import logging
 logger = logging.getLogger(__name__)
+import asyncio
 from asyncio import get_event_loop, open_unix_connection, create_subprocess_exec, Queue, Event, sleep, Lock
 from asyncio.subprocess import DEVNULL
 from inspect import iscoroutine
@@ -128,6 +129,7 @@ class MPV:
                 "command": arguments,
                 "request_id": self.rid
             })+"\n"
+            logger.debug(f"command: {data}")
             data = data.encode("utf-8")
             self.writer.write(data)
             await self.writer.drain()
@@ -136,10 +138,9 @@ class MPV:
             return response
 
     async def command(self, *args):
-        logger.debug(f"command: {args}")
         result = await self.send(args)
         if result.get("error") != "success":
-            raise MPVError("mpv command returned error: %s" %(result.get("error")))
+            raise MPVError("mpv command returned error: %s" %(result))
 
         return result.get("data")
 
@@ -152,13 +153,19 @@ class MPV:
         else:
             self.event_bindings[event] = [func]
 
-    async def get_events(self, event=None):
+    async def get_events(self, event=None, timeout=None):
         """
         Async generator. This will yield events as dictionaries
         """
         self.wait_queue = Queue()
         while True:
-            data = await self.wait_queue.get()
+            if timeout:
+                try:
+                    data = await asyncio.wait_for(self.wait_queue.get(), timeout)
+                except asyncio.TimeoutError:
+                    return
+            else:
+                data = await self.wait_queue.get()
             if not event or data["event"] == event:
                 yield data
         self.wait_queue = None
