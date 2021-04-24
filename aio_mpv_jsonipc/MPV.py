@@ -4,7 +4,7 @@ from asyncio import get_event_loop, open_unix_connection, create_subprocess_exec
 from asyncio.subprocess import DEVNULL
 from inspect import iscoroutine
 from os import path, unlink, chmod
-from json import dumps, loads
+import json
 from traceback import print_exc
 
 class ResponseEvent:
@@ -26,7 +26,14 @@ class MPVError(Exception):
         super(MPVError, self).__init__(*args, **kwargs)
 
 class MPV:
-    def __init__(self, media="", socket=None, mpv_path="/usr/bin/mpv", mpv_args=["--no-audio-display"]):
+    def __init__(
+            self,
+            media="",
+            socket=None,
+            mpv_path="/usr/bin/mpv",
+            mpv_args=["--no-audio-display"],
+            log_callback=None,
+            log_level="error"):
         """
         Create an MPV instance. if you specify a socket, this will not create a new instance and will instead connect to that one.
         If not it will start a new MPV instance according to the mpv_path argument and connect to it. Optionally you can specify a path or URL
@@ -45,6 +52,8 @@ class MPV:
         self.mpv_args = mpv_args
         self.socket = socket
         self.mpv_path = mpv_path
+        self.log_callback = log_callback
+        self.log_level = log_level
         self.reader, self.writer = None, None
         self.process = None
         self.event_queue = Queue()
@@ -76,7 +85,10 @@ class MPV:
 
         while True:
             data = await self.reader.readline()
-            json_data = loads(data)
+            try:
+                json_data = json.loads(data)
+            except json.decoder.JSONDecodeError:
+                break
             logger.debug(json_data)
             if "request_id" in json_data and json_data["request_id"] in self.command_responses:
                 self.command_responses[json_data["request_id"]].set_response(json_data)
@@ -112,7 +124,7 @@ class MPV:
         async with self.command_lock:
             self.rid += 1
             self.command_responses[self.rid] = ResponseEvent()
-            data = dumps({
+            data = json.dumps({
                 "command": arguments,
                 "request_id": self.rid
             })+"\n"
@@ -176,8 +188,15 @@ class MPV:
         self.listen_for("property-change", self.on_property_change)
         self.listen_for("client-message", self.on_client_message)
 
+        if self.log_callback is not None and self.log_level is not None:
+            await self.command("request_log_messages", self.log_level)
+            self.listen_for("log-message", self.on_log_message)
+
         if self.process:
             self.loop.create_task(self._wait_destroy())
+
+    async def on_log_message(self, level, prefix, text):
+        await self.log_callback(level, prefix, text.strip())
 
     async def on_client_message(self, args):
         if len(args) == 2 and args[0] == "custom-bind":
